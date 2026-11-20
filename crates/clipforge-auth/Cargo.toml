@@ -1,0 +1,16 @@
+[package]
+name = "clipforge-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Authentication, password hashing, and API token verification for ClipForge Server"
+
+[dependencies]
+chrono.workspace = true
+clipforge-api.workspace = true
+clipforge-db.workspace = true
+hex.workspace = true
+ring.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

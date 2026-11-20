@@ -1,0 +1,33 @@
+[package]
+name = "clipforge-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Standalone ClipForge cloud media server"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+clap.workspace = true
+clipforge-api.workspace = true
+clipforge-auth.workspace = true
+clipforge-db.workspace = true
+clipforge-storage.workspace = true
+futures-util.workspace = true
+mime_guess.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tower.workspace = true

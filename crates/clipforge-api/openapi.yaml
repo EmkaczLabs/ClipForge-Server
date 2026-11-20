@@ -1,0 +1,710 @@
+openapi: 3.1.0
+info:
+  title: ClipForge Server API
+  version: 1.0.0
+  description: Standalone ClipForge cloud clip storage, streaming upload, and sharing API (v1).
+  license:
+    name: MIT
+servers:
+  - url: /
+    description: Current server
+security:
+  - bearerAuth: []
+  - apiKeyHeader: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthDto"
+
+  /api/v1/health:
+    get:
+      summary: Health check (v1)
+      security: []
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthDto"
+
+  /api/v1/server/info:
+    get:
+      summary: Server capabilities and limits
+      security: []
+      responses:
+        "200":
+          description: Server info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfoDto"
+
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User registered and authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthLoginResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate with username and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthLoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthLoginResponse"
+        "401":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke current session token
+      responses:
+        "204":
+          description: Logged out
+
+  /api/v1/auth/me:
+    get:
+      summary: Get current user profile and quota
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+
+  /api/v1/auth/tokens:
+    get:
+      summary: List API tokens for current user
+      responses:
+        "200":
+          description: List of API tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiTokenInfo"
+    post:
+      summary: Create a new scoped API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: Created API token (plaintext returned once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTokenResponse"
+
+  /api/v1/auth/tokens/{id}:
+    delete:
+      summary: Revoke an API token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Token revoked
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/v1/quota:
+    get:
+      summary: Get current user storage quota
+      responses:
+        "200":
+          description: Quota usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotaDto"
+
+  /api/v1/uploads:
+    post:
+      summary: Create a streaming/chunked upload session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUploadSessionRequest"
+      responses:
+        "201":
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUploadSessionResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/v1/uploads/{session_id}:
+    get:
+      summary: Get upload session status
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upload session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatusDto"
+    delete:
+      summary: Abort an upload session
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Upload session aborted
+
+  /api/v1/uploads/{session_id}/parts/{part_number}:
+    put:
+      summary: Upload a single part of a chunked upload session
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: part_number
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Part accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatusDto"
+
+  /api/v1/uploads/{session_id}/complete:
+    post:
+      summary: Finalize an upload session and create the clip record
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upload finalized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatusDto"
+
+  /api/v1/clips:
+    get:
+      summary: List clips owned by current user
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of clips
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClipDto"
+    post:
+      summary: Direct multipart clip upload (legacy-compatible)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [metadata, file]
+              properties:
+                metadata:
+                  type: string
+                visibility:
+                  $ref: "#/components/schemas/ShareVisibility"
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Clip uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClipDto"
+
+  /api/v1/clips/{id}:
+    get:
+      summary: Get clip metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Clip metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClipDto"
+    patch:
+      summary: Update clip metadata or visibility
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClipRequest"
+      responses:
+        "200":
+          description: Updated clip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClipDto"
+    delete:
+      summary: Delete a clip and its stored object
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Clip deleted
+
+  /api/v1/clips/{id}/shares:
+    post:
+      summary: Create or update a share link for a clip
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareRequest"
+      responses:
+        "201":
+          description: Share created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateShareResponse"
+
+  /api/v1/shares/{token}:
+    get:
+      summary: Get public share metadata
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public share metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicShareDto"
+
+  /api/v1/shares/{token}/video:
+    get:
+      summary: Stream shared video with HTTP Range support
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Range
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full video stream
+        "206":
+          description: Partial byte-range video stream
+        "416":
+          description: Range not satisfiable
+    head:
+      summary: Head shared video for size and range support
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Video headers
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  responses:
+    ErrorResponse:
+      description: Structured API error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorDto"
+
+  schemas:
+    ShareVisibility:
+      type: string
+      enum: [public, private]
+    UserRole:
+      type: string
+      enum: [user, admin]
+    UploadSessionStatus:
+      type: string
+      enum: [pending, uploading, finalizing, completed, failed, aborted]
+    GameInfo:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        executable: { type: [string, "null"] }
+        process_name: { type: [string, "null"] }
+    AudioTrackInfo:
+      type: object
+      required: [index, codec, channels, sample_rate]
+      properties:
+        index: { type: integer }
+        codec: { type: string }
+        channels: { type: integer }
+        sample_rate: { type: integer }
+        label: { type: [string, "null"] }
+    ApiErrorDto:
+      type: object
+      required: [error, code, status]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        status: { type: integer }
+        details: {}
+    HealthDto:
+      type: object
+      required: [status, version, db_ok, storage_ok, uptime_secs]
+      properties:
+        status: { type: string }
+        version: { type: string }
+        db_ok: { type: boolean }
+        storage_ok: { type: boolean }
+        uptime_secs: { type: integer }
+    QuotaDto:
+      type: object
+      required: [used_bytes, limit_bytes, remaining_bytes, clip_count]
+      properties:
+        used_bytes: { type: integer }
+        limit_bytes: { type: integer }
+        remaining_bytes: { type: integer }
+        clip_count: { type: integer }
+    ServerInfoDto:
+      type: object
+      required: [name, version, api_version, storage_backend, max_upload_bytes, chunk_size_bytes, registration_enabled]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        api_version: { type: string }
+        storage_backend: { type: string }
+        max_upload_bytes: { type: integer }
+        chunk_size_bytes: { type: integer }
+        registration_enabled: { type: boolean }
+        public_base_url: { type: [string, "null"] }
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        display_name: { type: [string, "null"] }
+    AuthLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    UserInfo:
+      type: object
+      required: [id, username, role, is_active, created_at]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        display_name: { type: [string, "null"] }
+        role: { $ref: "#/components/schemas/UserRole" }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        quota: { $ref: "#/components/schemas/QuotaDto" }
+    AuthLoginResponse:
+      type: object
+      required: [user_id, username, token, expires_at]
+      properties:
+        user_id: { type: string }
+        username: { type: string }
+        token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/UserInfo" }
+    ApiTokenInfo:
+      type: object
+      required: [id, name, prefix, scopes, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+    CreateTokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        expires_in_days: { type: [integer, "null"] }
+    CreateTokenResponse:
+      type: object
+      required: [id, name, prefix, token, scopes, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        token: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+    ClipDto:
+      type: object
+      required: [id, owner_id, title, duration_ms, width, height, fps, size_bytes, codec, content_type, visibility, created_at, uploaded_at]
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string }
+        title: { type: string }
+        game: { $ref: "#/components/schemas/GameInfo" }
+        duration_ms: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        fps: { type: number }
+        size_bytes: { type: integer }
+        codec: { type: string }
+        content_type: { type: string }
+        audio_tracks:
+          type: array
+          items: { $ref: "#/components/schemas/AudioTrackInfo" }
+        tags:
+          type: array
+          items: { type: string }
+        notes: { type: [string, "null"] }
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+        share_id: { type: [string, "null"] }
+        share_url: { type: [string, "null"] }
+        stream_url: { type: [string, "null"] }
+        thumbnail_url: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        uploaded_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+    UpdateClipRequest:
+      type: object
+      properties:
+        title: { type: [string, "null"] }
+        notes: { type: [string, "null"] }
+        tags:
+          type: [array, "null"]
+          items: { type: string }
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+    CreateUploadSessionRequest:
+      type: object
+      required: [title, filename, total_bytes]
+      properties:
+        clip_id: { type: [string, "null"], format: uuid }
+        title: { type: string }
+        filename: { type: string }
+        total_bytes: { type: integer }
+        content_type: { type: [string, "null"] }
+        sha256: { type: [string, "null"] }
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+        game: { $ref: "#/components/schemas/GameInfo" }
+        duration_ms: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        fps: { type: number }
+        codec: { type: string }
+        audio_tracks:
+          type: array
+          items: { $ref: "#/components/schemas/AudioTrackInfo" }
+        tags:
+          type: array
+          items: { type: string }
+        notes: { type: [string, "null"] }
+        created_at: { type: [string, "null"], format: date-time }
+    CreateUploadSessionResponse:
+      type: object
+      required: [session_id, clip_id, upload_url, part_size_bytes, total_bytes, total_parts, expires_at]
+      properties:
+        session_id: { type: string }
+        clip_id: { type: string, format: uuid }
+        upload_url: { type: string }
+        part_size_bytes: { type: integer }
+        total_bytes: { type: integer }
+        total_parts: { type: integer }
+        expires_at: { type: string, format: date-time }
+    UploadStatusDto:
+      type: object
+      required: [session_id, clip_id, status, bytes_received, total_bytes, uploaded_parts, total_parts, expires_at]
+      properties:
+        session_id: { type: string }
+        clip_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/UploadSessionStatus" }
+        bytes_received: { type: integer }
+        total_bytes: { type: integer }
+        uploaded_parts:
+          type: array
+          items: { type: integer }
+        total_parts: { type: integer }
+        expires_at: { type: string, format: date-time }
+        clip: { $ref: "#/components/schemas/ClipDto" }
+    CreateShareRequest:
+      type: object
+      properties:
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+        expires_in_hours: { type: [integer, "null"] }
+    CreateShareResponse:
+      type: object
+      required: [share_id, clip_id, url, visibility, created_at]
+      properties:
+        share_id: { type: string }
+        clip_id: { type: string, format: uuid }
+        url: { type: string }
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+        expires_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    PublicShareDto:
+      type: object
+      required: [share_id, clip_id, title, duration_ms, width, height, fps, size_bytes, codec, content_type, visibility, url, video_url, created_at, uploaded_at]
+      properties:
+        share_id: { type: string }
+        clip_id: { type: string, format: uuid }
+        title: { type: string }
+        game: { $ref: "#/components/schemas/GameInfo" }
+        duration_ms: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        fps: { type: number }
+        size_bytes: { type: integer }
+        codec: { type: string }
+        content_type: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        notes: { type: [string, "null"] }
+        visibility: { $ref: "#/components/schemas/ShareVisibility" }
+        url: { type: string }
+        video_url: { type: string }
+        thumbnail_url: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        uploaded_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }

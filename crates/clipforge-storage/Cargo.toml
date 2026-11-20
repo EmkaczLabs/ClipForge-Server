@@ -1,0 +1,19 @@
+[package]
+name = "clipforge-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Object storage abstraction (Local FS and S3/RustFS) for ClipForge Server"
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+ring.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
