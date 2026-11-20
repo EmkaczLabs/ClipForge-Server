@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test, release)
+    runs-on: ubuntu-latest
+    env:
+      # Isolated local storage for tests; never requires production RustFS credentials.
+      CLIPFORGE_STORAGE_BACKEND: local
+      CLIPFORGE_STORAGE_PATH: ${{ runner.temp }}/clipforge-test-clips
+      CLIPFORGE_DATABASE_PATH: ${{ runner.temp }}/clipforge-test.db
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run workspace tests
+        run: cargo test --workspace
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+  docker:
+    name: Docker Build & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: clipforge-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test container in local storage mode
+        run: |
+          set -euo pipefail
+          docker run -d --name clipforge-ci \
+            -p 127.0.0.1:3000:3000 \
+            -e CLIPFORGE_STORAGE_BACKEND=local \
+            -e CLIPFORGE_STORAGE_PATH=/data/clips \
+            clipforge-server:ci
+
+          cleanup() {
+            docker logs clipforge-ci || true
+            docker rm -f clipforge-ci || true
+          }
+          trap cleanup EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/health | grep -q '"status":"ok"'; then
+              echo "Healthcheck passed on attempt $i"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Healthcheck failed to become ready in time"
+          exit 1

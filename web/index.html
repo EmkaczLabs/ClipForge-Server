@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>ClipForge — Shared Clip</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23121318'/%3E%3Cpath d='M11 9.5L23 16L11 22.5V9.5Z' fill='%238B5CF6'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #121318;
+      --bg-elevated: #181a22;
+      --surface: #1b1d26;
+      --surface-hover: #232633;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --text: #f3f4f8;
+      --text-secondary: #a1a7b8;
+      --text-muted: #6e7487;
+      --accent: #8B5CF6;
+      --accent-hover: #a78bfa;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --accent-glow: rgba(139, 92, 246, 0.35);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      min-height: 100%;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.12), transparent 65%);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--border);
+      background: rgba(18, 19, 24, 0.86);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .header-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-weight: 650;
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--accent), #6d28d9);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 18px var(--accent-glow);
+      flex-shrink: 0;
+    }
+
+    .brand-mark svg {
+      width: 13px;
+      height: 13px;
+      fill: #fff;
+      margin-left: 1px;
+    }
+
+    .visibility-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.32rem 0.72rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .visibility-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .visibility-pill.is-private .dot {
+      background: var(--warning);
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+    }
+
+    /* Main Layout */
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* State Cards (Loading / Error / Revoked / Expired / Not Found) */
+    .state-card {
+      margin: 2rem auto;
+      width: 100%;
+      max-width: 520px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem 1.75rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    .state-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      display: grid;
+      place-items: center;
+      color: var(--accent-hover);
+      margin-bottom: 0.25rem;
+    }
+
+    .state-icon.is-warning {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: var(--warning);
+    }
+
+    .state-icon.is-danger {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--danger);
+    }
+
+    .state-card h2 {
+      font-size: 1.2rem;
+      font-weight: 650;
+      letter-spacing: -0.015em;
+    }
+
+    .state-card p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.55;
+      max-width: 400px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid var(--border-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .auth-form {
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    input[type="password"],
+    input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 0.55rem 0.8rem;
+      font-size: 0.88rem;
+      font-family: var(--font-mono);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    /* Video Player Shell */
+    .player-shell {
+      position: relative;
+      background: #07080b;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+      user-select: none;
+    }
+
+    .player-shell:focus-within {
+      border-color: rgba(139, 92, 246, 0.45);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+      background: #000;
+      outline: none;
+    }
+
+    .player-center-btn {
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(18, 19, 24, 0.72);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      opacity: 0;
+      transform: scale(0.92);
+      transition: opacity 0.18s ease, transform 0.18s ease, background 0.15s ease, border-color 0.15s ease;
+      pointer-events: none;
+    }
+
+    .player-shell.is-paused .player-center-btn,
+    .player-shell.is-ended .player-center-btn {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    .player-center-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent-hover);
+      box-shadow: 0 0 28px var(--accent-glow);
+    }
+
+    .player-buffering {
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(18, 19, 24, 0.75);
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    /* Custom Controls Overlay */
+    .player-controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 2.25rem 1rem 0.8rem;
+      background: linear-gradient(to top, rgba(10, 11, 15, 0.92) 0%, rgba(10, 11, 15, 0.55) 55%, transparent 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      opacity: 1;
+      transition: opacity 0.2s ease;
+    }
+
+    .player-shell.is-playing.controls-idle .player-controls {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .seek-wrap {
+      position: relative;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    .seek-track {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+      overflow: hidden;
+      transition: height 0.12s ease;
+    }
+
+    .seek-wrap:hover .seek-track,
+    .seek-wrap.is-dragging .seek-track {
+      height: 6px;
+    }
+
+    .seek-buffered {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: rgba(255, 255, 255, 0.26);
+      border-radius: 999px;
+    }
+
+    .seek-progress {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: var(--accent);
+      border-radius: 999px;
+    }
+
+    .seek-thumb {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+      transform: translate(-50%, -50%) scale(0);
+      transition: transform 0.12s ease;
+      pointer-events: none;
+    }
+
+    .seek-wrap:hover .seek-thumb,
+    .seek-wrap.is-dragging .seek-thumb {
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .controls-left,
+    .controls-right {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .ctrl-btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+      padding: 0;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+
+    .ctrl-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    .time-readout {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      padding: 0 0.35rem;
+      white-space: nowrap;
+    }
+
+    .time-readout strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .volume-group {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 72px;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--accent);
+      cursor: pointer;
+    }
+
+    .volume-slider::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--accent);
+      cursor: pointer;
+    }
+
+    /* Metadata Card */
+    .meta-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.35rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.1rem;
+    }
+
+    .title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .title-block {
+      min-width: 0;
+      flex: 1 1 320px;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 650;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+      word-break: break-word;
+    }
+
+    .subtitle {
+      margin-top: 0.35rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .subtitle-sep {
+      color: var(--text-muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.52rem 0.92rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 0.84rem;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+    }
+
+    .btn:hover {
+      background: var(--surface-hover);
+      border-color: rgba(139, 92, 246, 0.5);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    /* Share URL Bar */
+    .share-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.4rem 0.45rem 0.4rem 0.75rem;
+    }
+
+    .share-bar-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .share-url-input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    /* Technical Metadata Pills */
+    .meta-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.32rem 0.68rem;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .meta-pill strong {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .meta-pill.is-tag {
+      color: var(--accent-hover);
+      border-color: rgba(139, 92, 246, 0.28);
+      background: var(--accent-soft);
+      font-family: var(--font-mono);
+    }
+
+    .notes {
+      border-top: 1px solid var(--border);
+      padding-top: 0.9rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .access-note {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      padding: 1rem 1.25rem 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 640px) {
+      .header-inner {
+        padding: 0.75rem 1rem;
+      }
+      main {
+        padding: 1rem 0.85rem 2rem;
+      }
+      .meta-card {
+        padding: 1rem;
+      }
+      h1 {
+        font-size: 1.12rem;
+      }
+      .volume-slider {
+        display: none;
+      }
+      .share-bar-label {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 16 16"><path d="M4 2.5L13.5 8L4 13.5V2.5Z"/></svg>
+        </span>
+        <span>ClipForge</span>
+      </div>
+      <span id="visibility-pill" class="visibility-pill hidden">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="visibility-text"></span>
+      </span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Loading State -->
+    <section id="loading-state" class="state-card" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading shared clip…</p>
+    </section>
+
+    <!-- Error / Revoked / Expired / Not Found / Private State -->
+    <section id="error-state" class="state-card hidden" aria-live="polite">
+      <div id="error-icon" class="state-icon" aria-hidden="true"></div>
+      <h2 id="error-title">Clip Unavailable</h2>
+      <p id="error-message"></p>
+      <form id="unlock-form" class="auth-form hidden">
+        <input id="token-input" type="password" placeholder="Bearer token or API key" autocomplete="off" aria-label="Bearer token or API key" />
+        <button type="submit" class="btn primary">Unlock</button>
+      </form>
+    </section>
+
+    <!-- Player View -->
+    <div id="player-view" class="hidden">
+      <div id="player-shell" class="player-shell is-paused">
+        <video id="video-player" playsinline preload="metadata" controls></video>
+
+        <div id="buffering-indicator" class="player-buffering hidden" aria-hidden="true">
+          <div class="spinner"></div>
+        </div>
+
+        <button id="center-play-btn" class="player-center-btn" type="button" aria-label="Play video">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+
+        <div id="player-controls" class="player-controls hidden">
+          <div id="seek-wrap" class="seek-wrap" role="slider" aria-label="Seek timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+            <div class="seek-track">
+              <div id="seek-buffered" class="seek-buffered"></div>
+              <div id="seek-progress" class="seek-progress"></div>
+            </div>
+            <div id="seek-thumb" class="seek-thumb"></div>
+          </div>
+
+          <div class="controls-row">
+            <div class="controls-left">
+              <button id="play-pause-btn" class="ctrl-btn" type="button" aria-label="Play">
+                <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="icon-pause" class="hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              </button>
+
+              <div class="volume-group">
+                <button id="mute-btn" class="ctrl-btn" type="button" aria-label="Mute">
+                  <svg id="icon-vol-on" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                  <svg id="icon-vol-off" class="hidden" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+                </button>
+                <input id="volume-slider" class="volume-slider" type="range" min="0" max="1" step="0.02" value="1" aria-label="Volume" />
+              </div>
+
+              <div class="time-readout">
+                <strong id="time-current">0:00</strong> / <span id="time-total">0:00</span>
+              </div>
+            </div>
+
+            <div class="controls-right">
+              <button id="fullscreen-btn" class="ctrl-btn" type="button" aria-label="Toggle fullscreen">
+                <svg id="icon-fs-enter" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                <svg id="icon-fs-exit" class="hidden" viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section class="meta-card" style="margin-top: 1.25rem;">
+        <div class="title-row">
+          <div class="title-block">
+            <h1 id="clip-title">Untitled Clip</h1>
+            <div id="clip-subtitle" class="subtitle"></div>
+          </div>
+          <div class="actions">
+            <button id="copy-link-btn" class="btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="copy-link-label">Copy Link</span>
+            </button>
+            <a id="download-btn" class="btn" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Download</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="share-bar">
+          <span class="share-bar-label">Share URL</span>
+          <input id="share-url-input" class="share-url-input" type="text" readonly aria-label="Share URL" />
+        </div>
+
+        <div id="meta-grid" class="meta-grid"></div>
+        <div id="clip-notes" class="notes hidden"></div>
+        <div id="access-note" class="access-note hidden"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>ClipForge Self-Hosted Share Player</footer>
+
+  <script>
+    (function () {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const shareToken = extractShareToken(pathParts);
+      const urlParams = new URLSearchParams(window.location.search);
+      let authToken = urlParams.get('token') || '';
+
+      const loadingEl = document.getElementById('loading-state');
+      const errorEl = document.getElementById('error-state');
+      const errorIconEl = document.getElementById('error-icon');
+      const errorTitleEl = document.getElementById('error-title');
+      const errorMsgEl = document.getElementById('error-message');
+      const unlockForm = document.getElementById('unlock-form');
+      const tokenInput = document.getElementById('token-input');
+
+      const playerView = document.getElementById('player-view');
+      const playerShell = document.getElementById('player-shell');
+      const videoEl = document.getElementById('video-player');
+      const bufferingEl = document.getElementById('buffering-indicator');
+      const centerPlayBtn = document.getElementById('center-play-btn');
+      const controlsEl = document.getElementById('player-controls');
+      const seekWrap = document.getElementById('seek-wrap');
+      const seekBuffered = document.getElementById('seek-buffered');
+      const seekProgress = document.getElementById('seek-progress');
+      const seekThumb = document.getElementById('seek-thumb');
+      const playPauseBtn = document.getElementById('play-pause-btn');
+      const iconPlay = document.getElementById('icon-play');
+      const iconPause = document.getElementById('icon-pause');
+      const muteBtn = document.getElementById('mute-btn');
+      const iconVolOn = document.getElementById('icon-vol-on');
+      const iconVolOff = document.getElementById('icon-vol-off');
+      const volumeSlider = document.getElementById('volume-slider');
+      const timeCurrentEl = document.getElementById('time-current');
+      const timeTotalEl = document.getElementById('time-total');
+      const fullscreenBtn = document.getElementById('fullscreen-btn');
+      const iconFsEnter = document.getElementById('icon-fs-enter');
+      const iconFsExit = document.getElementById('icon-fs-exit');
+
+      const titleEl = document.getElementById('clip-title');
+      const subtitleEl = document.getElementById('clip-subtitle');
+      const metaGridEl = document.getElementById('meta-grid');
+      const notesEl = document.getElementById('clip-notes');
+      const accessNoteEl = document.getElementById('access-note');
+      const visPill = document.getElementById('visibility-pill');
+      const visText = document.getElementById('visibility-text');
+      const shareUrlInput = document.getElementById('share-url-input');
+      const copyBtn = document.getElementById('copy-link-btn');
+      const copyLabel = document.getElementById('copy-link-label');
+      const downloadBtn = document.getElementById('download-btn');
+
+      let hideControlsTimer = null;
+      let isSeeking = false;
+
+      function extractShareToken(parts) {
+        if (parts.length === 0) return '';
+        if (parts[0] === 'c' || parts[0] === 's') {
+          return parts[1] || '';
+        }
+        return parts[parts.length - 1] || '';
+      }
+
+      function formatClock(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+        const total = Math.floor(seconds);
+        const hrs = Math.floor(total / 3600);
+        const mins = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        if (hrs > 0) {
+          return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      }
+
+      function formatDurationMs(ms) {
+        if (!ms || ms <= 0) return '0:00';
+        return formatClock(Math.round(ms / 1000));
+      }
+
+      function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        let val = bytes;
+        while (val >= 1024 && i < units.length - 1) {
+          val /= 1024;
+          i++;
+        }
+        return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+      }
+
+      function addMetaPill(label, value) {
+        const span = document.createElement('span');
+        span.className = 'meta-pill';
+        const labelNode = document.createTextNode(`${label} `);
+        const strong = document.createElement('strong');
+        strong.textContent = value;
+        span.appendChild(labelNode);
+        span.appendChild(strong);
+        metaGridEl.appendChild(span);
+      }
+
+      function showErrorState(kind, title, message, showUnlock) {
+        loadingEl.classList.add('hidden');
+        playerView.classList.add('hidden');
+        errorEl.classList.remove('hidden');
+
+        errorIconEl.className = 'state-icon';
+        if (kind === 'revoked' || kind === 'expired') {
+          errorIconEl.classList.add('is-warning');
+          errorIconEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+        } else if (kind === 'private') {
+          errorIconEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+        } else if (kind === 'error') {
+          errorIconEl.classList.add('is-danger');
+          errorIconEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+        } else {
+          errorIconEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+        }
+
+        errorTitleEl.textContent = title;
+        errorMsgEl.textContent = message;
+        if (showUnlock) {
+          unlockForm.classList.remove('hidden');
+        } else {
+          unlockForm.classList.add('hidden');
+        }
+      }
+
+      async function classifyAndShowError(resp) {
+        let payload = null;
+        try {
+          payload = await resp.json();
+        } catch {
+          payload = null;
+        }
+        const code = (payload && payload.code ? String(payload.code) : '').toLowerCase();
+        const msg = (payload && payload.error ? String(payload.error) : '').toLowerCase();
+
+        if (resp.status === 401 || resp.status === 403 || code === 'unauthorized' || code === 'forbidden') {
+          showErrorState(
+            'private',
+            'Private Clip',
+            'This clip is private. Enter an authorized bearer token or API key to view it.',
+            true
+          );
+          return;
+        }
+
+        if (code.includes('revoked') || msg.includes('revoked')) {
+          showErrorState(
+            'revoked',
+            'Share Link Revoked',
+            'The owner has revoked this share link, so the clip is no longer accessible.',
+            false
+          );
+          return;
+        }
+
+        if (resp.status === 410 || code.includes('expired') || msg.includes('expired')) {
+          showErrorState(
+            'expired',
+            'Share Link Expired',
+            'This share link has expired and is no longer available.',
+            false
+          );
+          return;
+        }
+
+        if (resp.status === 404 || code === 'not_found') {
+          showErrorState(
+            'not_found',
+            'Clip Not Found',
+            'This share link does not exist, or the clip has been removed.',
+            false
+          );
+          return;
+        }
+
+        showErrorState(
+          'error',
+          'Unable to Load Clip',
+          (payload && payload.error) || `The server returned status ${resp.status}.`,
+          false
+        );
+      }
+
+      function setupCustomControls() {
+        videoEl.removeAttribute('controls');
+        controlsEl.classList.remove('hidden');
+
+        function syncPlayState() {
+          const paused = videoEl.paused;
+          const ended = videoEl.ended;
+          playerShell.classList.toggle('is-paused', paused && !ended);
+          playerShell.classList.toggle('is-playing', !paused && !ended);
+          playerShell.classList.toggle('is-ended', ended);
+          iconPlay.classList.toggle('hidden', !paused);
+          iconPause.classList.toggle('hidden', paused);
+          playPauseBtn.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+          if (paused) {
+            playerShell.classList.remove('controls-idle');
+            clearTimeout(hideControlsTimer);
+          } else {
+            scheduleHideControls();
+          }
+        }
+
+        function scheduleHideControls() {
+          clearTimeout(hideControlsTimer);
+          playerShell.classList.remove('controls-idle');
+          if (!videoEl.paused) {
+            hideControlsTimer = setTimeout(() => {
+              playerShell.classList.add('controls-idle');
+            }, 2200);
+          }
+        }
+
+        function togglePlay() {
+          if (videoEl.paused || videoEl.ended) {
+            videoEl.play().catch(() => {});
+          } else {
+            videoEl.pause();
+          }
+        }
+
+        function updateTimeline() {
+          const duration = videoEl.duration;
+          const current = videoEl.currentTime;
+          timeCurrentEl.textContent = formatClock(current);
+          if (Number.isFinite(duration) && duration > 0) {
+            timeTotalEl.textContent = formatClock(duration);
+            if (!isSeeking) {
+              const pct = Math.min(100, Math.max(0, (current / duration) * 100));
+              seekProgress.style.width = `${pct}%`;
+              seekThumb.style.left = `${pct}%`;
+              seekWrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+            }
+            if (videoEl.buffered && videoEl.buffered.length > 0) {
+              const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
+              const bufPct = Math.min(100, Math.max(0, (bufferedEnd / duration) * 100));
+              seekBuffered.style.width = `${bufPct}%`;
+            }
+          }
+        }
+
+        function seekFromPointer(clientX) {
+          const rect = seekWrap.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+          const pct = ratio * 100;
+          seekProgress.style.width = `${pct}%`;
+          seekThumb.style.left = `${pct}%`;
+          if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
+            videoEl.currentTime = ratio * videoEl.duration;
+          }
+        }
+
+        function syncVolume() {
+          const muted = videoEl.muted || videoEl.volume === 0;
+          iconVolOn.classList.toggle('hidden', muted);
+          iconVolOff.classList.toggle('hidden', !muted);
+          muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+          volumeSlider.value = videoEl.muted ? '0' : String(videoEl.volume);
+        }
+
+        function toggleFullscreen() {
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          } else if (playerShell.requestFullscreen) {
+            playerShell.requestFullscreen().catch(() => {});
+          } else if (videoEl.webkitEnterFullscreen) {
+            videoEl.webkitEnterFullscreen();
+          }
+        }
+
+        playPauseBtn.addEventListener('click', togglePlay);
+        centerPlayBtn.addEventListener('click', togglePlay);
+        videoEl.addEventListener('click', togglePlay);
+        videoEl.addEventListener('dblclick', toggleFullscreen);
+
+        videoEl.addEventListener('play', syncPlayState);
+        videoEl.addEventListener('pause', syncPlayState);
+        videoEl.addEventListener('ended', syncPlayState);
+        videoEl.addEventListener('loadedmetadata', updateTimeline);
+        videoEl.addEventListener('timeupdate', updateTimeline);
+        videoEl.addEventListener('progress', updateTimeline);
+        videoEl.addEventListener('volumechange', syncVolume);
+
+        videoEl.addEventListener('waiting', () => bufferingEl.classList.remove('hidden'));
+        videoEl.addEventListener('playing', () => bufferingEl.classList.add('hidden'));
+        videoEl.addEventListener('canplay', () => bufferingEl.classList.add('hidden'));
+
+        seekWrap.addEventListener('pointerdown', (e) => {
+          isSeeking = true;
+          seekWrap.classList.add('is-dragging');
+          seekWrap.setPointerCapture(e.pointerId);
+          seekFromPointer(e.clientX);
+        });
+        seekWrap.addEventListener('pointermove', (e) => {
+          if (isSeeking) seekFromPointer(e.clientX);
+        });
+        seekWrap.addEventListener('pointerup', (e) => {
+          if (isSeeking) {
+            isSeeking = false;
+            seekWrap.classList.remove('is-dragging');
+            seekWrap.releasePointerCapture(e.pointerId);
+          }
+        });
+        seekWrap.addEventListener('keydown', (e) => {
+          if (!Number.isFinite(videoEl.duration)) return;
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            videoEl.currentTime = Math.max(0, videoEl.currentTime - 5);
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            videoEl.currentTime = Math.min(videoEl.duration, videoEl.currentTime + 5);
+          }
+        });
+
+        muteBtn.addEventListener('click', () => {
+          videoEl.muted = !videoEl.muted;
+        });
+        volumeSlider.addEventListener('input', () => {
+          const val = parseFloat(volumeSlider.value);
+          videoEl.volume = val;
+          videoEl.muted = val === 0;
+        });
+
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        document.addEventListener('fullscreenchange', () => {
+          const isFs = Boolean(document.fullscreenElement);
+          iconFsEnter.classList.toggle('hidden', isFs);
+          iconFsExit.classList.toggle('hidden', !isFs);
+        });
+
+        playerShell.addEventListener('mousemove', scheduleHideControls);
+        playerShell.addEventListener('touchstart', scheduleHideControls, { passive: true });
+        playerShell.addEventListener('mouseleave', () => {
+          if (!videoEl.paused) playerShell.classList.add('controls-idle');
+        });
+
+        document.addEventListener('keydown', (e) => {
+          if (playerView.classList.contains('hidden')) return;
+          const tag = document.activeElement && document.activeElement.tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+          if (e.key === ' ' || e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            togglePlay();
+          } else if (e.key.toLowerCase() === 'm') {
+            videoEl.muted = !videoEl.muted;
+          } else if (e.key.toLowerCase() === 'f') {
+            toggleFullscreen();
+          } else if (e.key === 'ArrowLeft' && Number.isFinite(videoEl.duration)) {
+            e.preventDefault();
+            videoEl.currentTime = Math.max(0, videoEl.currentTime - 5);
+          } else if (e.key === 'ArrowRight' && Number.isFinite(videoEl.duration)) {
+            e.preventDefault();
+            videoEl.currentTime = Math.min(videoEl.duration, videoEl.currentTime + 5);
+          }
+        });
+
+        syncPlayState();
+        syncVolume();
+      }
+
+      async function loadShare() {
+        loadingEl.classList.remove('hidden');
+        errorEl.classList.add('hidden');
+        playerView.classList.add('hidden');
+        unlockForm.classList.add('hidden');
+        visPill.classList.add('hidden');
+
+        if (!shareToken) {
+          showErrorState(
+            'not_found',
+            'No Clip Specified',
+            'Open a valid /c/<share-id> link to watch a shared clip.',
+            false
+          );
+          return;
+        }
+
+        const headers = {};
+        if (authToken) {
+          headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        try {
+          const resp = await fetch(`/api/v1/shares/${encodeURIComponent(shareToken)}`, { headers });
+          if (!resp.ok) {
+            await classifyAndShowError(resp);
+            return;
+          }
+
+          const meta = await resp.json();
+          const clipTitle = meta.title || 'Untitled Clip';
+          document.title = `${clipTitle} — ClipForge`;
+          titleEl.textContent = clipTitle;
+
+          // Subtitle: game name + created timestamp (no private account identifiers)
+          subtitleEl.innerHTML = '';
+          const subParts = [];
+          if (meta.game && meta.game.name) subParts.push(meta.game.name);
+          if (meta.created_at) {
+            const dt = new Date(meta.created_at);
+            if (!Number.isNaN(dt.getTime())) subParts.push(dt.toLocaleString());
+          }
+          subParts.forEach((part, idx) => {
+            if (idx > 0) {
+              const sep = document.createElement('span');
+              sep.className = 'subtitle-sep';
+              sep.textContent = '•';
+              subtitleEl.appendChild(sep);
+            }
+            const span = document.createElement('span');
+            span.textContent = part;
+            subtitleEl.appendChild(span);
+          });
+
+          // Visibility badge & accurate unlisted/private labeling
+          const isPrivate = meta.visibility === 'private';
+          visPill.classList.toggle('is-private', isPrivate);
+          visText.textContent = isPrivate ? 'Private' : 'Unlisted · Anyone with the link';
+          visPill.title = isPrivate
+            ? 'Private share — requires authorization'
+            : 'Accessible to anyone with this link';
+          visPill.classList.remove('hidden');
+
+          accessNoteEl.textContent = isPrivate
+            ? 'Private share: authorized token required.'
+            : 'Unlisted share: accessible to anyone with this link.';
+          accessNoteEl.classList.remove('hidden');
+
+          // Share URL always reflects the active browser URL (never hardcoded)
+          shareUrlInput.value = window.location.href;
+
+          // Metadata pills
+          metaGridEl.innerHTML = '';
+          addMetaPill('Duration', formatDurationMs(meta.duration_ms));
+          timeTotalEl.textContent = formatDurationMs(meta.duration_ms);
+
+          if (meta.width && meta.height) {
+            addMetaPill('Resolution', `${meta.width}×${meta.height}`);
+          }
+          if (meta.fps) {
+            addMetaPill('FPS', `${Math.round(meta.fps)}`);
+          }
+          if (meta.codec) {
+            addMetaPill('Codec', String(meta.codec).toUpperCase());
+          }
+          if (meta.size_bytes) {
+            addMetaPill('Size', formatBytes(meta.size_bytes));
+          }
+          if (meta.expires_at) {
+            const exp = new Date(meta.expires_at);
+            if (!Number.isNaN(exp.getTime())) {
+              addMetaPill('Expires', exp.toLocaleDateString());
+            }
+          }
+          if (Array.isArray(meta.tags)) {
+            meta.tags.forEach((tag) => {
+              const b = document.createElement('span');
+              b.className = 'meta-pill is-tag';
+              b.textContent = `#${tag}`;
+              metaGridEl.appendChild(b);
+            });
+          }
+
+          if (meta.notes) {
+            notesEl.textContent = meta.notes;
+            notesEl.classList.remove('hidden');
+          } else {
+            notesEl.classList.add('hidden');
+          }
+
+          // Video stream URL (supports HTTP Range requests)
+          const baseVideoUrl = meta.video_url || `/api/v1/shares/${encodeURIComponent(shareToken)}/video`;
+          const videoUrl = authToken
+            ? `${baseVideoUrl}${baseVideoUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}`
+            : baseVideoUrl;
+
+          if (meta.thumbnail_url) {
+            videoEl.poster = meta.thumbnail_url;
+          } else {
+            videoEl.removeAttribute('poster');
+          }
+          videoEl.src = videoUrl;
+          downloadBtn.href = videoUrl;
+
+          loadingEl.classList.add('hidden');
+          playerView.classList.remove('hidden');
+        } catch {
+          showErrorState(
+            'error',
+            'Connection Error',
+            'Could not reach the ClipForge server. Please try again.',
+            false
+          );
+        }
+      }
+
+      unlockForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        authToken = tokenInput.value.trim();
+        loadShare();
+      });
+
+      copyBtn.addEventListener('click', async function () {
+        const shareUrl = window.location.href;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(shareUrl);
+          } else {
+            shareUrlInput.select();
+            document.execCommand('copy');
+          }
+          copyLabel.textContent = 'Copied!';
+          setTimeout(() => {
+            copyLabel.textContent = 'Copy Link';
+          }, 1600);
+        } catch {
+          copyLabel.textContent = 'Copy failed';
+          setTimeout(() => {
+            copyLabel.textContent = 'Copy Link';
+          }, 1600);
+        }
+      });
+
+      setupCustomControls();
+      loadShare();
+    })();
+  </script>
+</body>
+</html>

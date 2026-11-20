@@ -1,0 +1,45 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in ClipForge Server
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what happened vs. what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Commands, API requests, or configuration used to trigger the issue.
+      placeholder: |
+        1. Start server with...
+        2. Send request to...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Server Version / Commit
+      placeholder: v0.1.0 or git SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Method
+      options:
+        - Docker Compose (External RustFS / S3)
+        - Docker Compose (Local Storage)
+        - Bare-metal / Cargo binary
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Paste sanitized logs (redact tokens, passwords, and S3 keys).
+      render: shell
