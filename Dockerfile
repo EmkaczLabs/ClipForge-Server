@@ -55,7 +55,7 @@ USER clipforge
 STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["curl", "-fsS", "http://127.0.0.1:3000/health"]
+    CMD ["curl", "-fsS", "http://127.0.0.1:3000/ready"]
 
 ENTRYPOINT ["/usr/local/bin/clipforge-server"]
 CMD ["serve"]
