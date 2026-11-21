@@ -364,6 +364,15 @@ impl Database {
                 ],
             )?;
 
+            if let Some(vis) = update.visibility {
+                tx.execute(
+                    "UPDATE shares
+                     SET visibility = ?1
+                     WHERE clip_id = ?2 AND owner_id = ?3 AND revoked_at IS NULL",
+                    params![visibility_to_str(vis), clip_id.to_string(), owner_id],
+                )?;
+            }
+
             let updated = fetch_clip_by_id_and_owner(&tx, &owner_id, clip_id)?;
             tx.commit()?;
             Ok(updated)

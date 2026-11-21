@@ -132,6 +132,10 @@ pub fn build_router(state: AppState) -> Router {
             get(get_public_share).delete(revoke_share),
         )
         .route(
+            "/api/v1/shares/{token}/visibility",
+            patch(update_share_visibility),
+        )
+        .route(
             "/api/v1/shares/{token}/video",
             get(stream_share_video).head(head_share_video),
         )
@@ -1029,15 +1033,40 @@ async fn delete_clip(
     user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ServerError> {
+    if state
+        .db
+        .get_clip_for_owner(&user.user_id, id)
+        .await?
+        .is_none()
+    {
+        return Err(ServerError::NotFound("clip not found".to_string()));
+    }
+
     let assets = state
+        .db
+        .list_clip_assets_for_owner(&user.user_id, id)
+        .await?;
+
+    // Purge object storage before removing DB metadata so partial/transient
+    // storage failures leave the clip and assets recoverable on retry.
+    for asset in &assets {
+        if let Err(err) = state.storage.delete_object(&asset.storage_key).await {
+            tracing::error!(
+                clip_id = %id,
+                storage_key = %asset.storage_key,
+                error = %err,
+                "failed to delete clip storage object; preserving database record for retry"
+            );
+            return Err(err.into());
+        }
+    }
+
+    state
         .db
         .delete_clip_for_owner(&user.user_id, id)
         .await?
         .ok_or_else(|| ServerError::NotFound("clip not found".to_string()))?;
 
-    for asset in assets {
-        let _ = state.storage.delete_object(&asset.storage_key).await;
-    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1174,6 +1203,34 @@ async fn list_user_shares(
         all.append(&mut shares);
     }
     Ok(Json(all))
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateShareVisibilityRequest {
+    visibility: ShareVisibility,
+}
+
+async fn update_share_visibility(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    headers: HeaderMap,
+    Path(share_id): Path<String>,
+    Json(req): Json<UpdateShareVisibilityRequest>,
+) -> Result<Json<CreateShareResponse>, ServerError> {
+    let record = state
+        .db
+        .update_share_visibility(&user.user_id, &share_id, req.visibility)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("share not found".to_string()))?;
+
+    Ok(Json(CreateShareResponse {
+        url: build_share_url(&state.config, &headers, &record.share_id),
+        share_id: record.share_id,
+        clip_id: record.clip_id,
+        visibility: record.visibility,
+        expires_at: record.expires_at,
+        created_at: record.created_at,
+    }))
 }
 
 async fn revoke_share(

@@ -119,6 +119,54 @@ impl Database {
         .await
     }
 
+    /// Updates visibility on an active share link and syncs the owning clip and its active shares.
+    pub async fn update_share_visibility(
+        &self,
+        owner_id: &str,
+        share_id: &str,
+        visibility: ShareVisibility,
+    ) -> Result<Option<ShareRecord>> {
+        let owner_id = owner_id.to_string();
+        let share_id = share_id.to_string();
+        self.with_conn(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let existing: Option<ShareRecord> = tx
+                .query_row(
+                    "SELECT share_id, clip_id, owner_id, visibility, created_at, expires_at, revoked_at
+                     FROM shares
+                     WHERE share_id = ?1 AND owner_id = ?2 AND revoked_at IS NULL",
+                    params![share_id, owner_id],
+                    map_share_row,
+                )
+                .optional()?;
+
+            let Some(mut share) = existing else {
+                return Ok(None);
+            };
+
+            let vis_str = visibility_to_str(visibility);
+            let now_str = Utc::now().to_rfc3339();
+
+            tx.execute(
+                "UPDATE shares
+                 SET visibility = ?1
+                 WHERE clip_id = ?2 AND owner_id = ?3 AND revoked_at IS NULL",
+                params![vis_str, share.clip_id.to_string(), owner_id],
+            )?;
+            tx.execute(
+                "UPDATE clips
+                 SET visibility = ?1, updated_at = ?2
+                 WHERE id = ?3 AND owner_id = ?4",
+                params![vis_str, now_str, share.clip_id.to_string(), owner_id],
+            )?;
+
+            tx.commit()?;
+            share.visibility = visibility;
+            Ok(Some(share))
+        })
+        .await
+    }
+
     /// Revokes a share link strictly owned by `owner_id`.
     pub async fn revoke_share(&self, owner_id: &str, share_id: &str) -> Result<bool> {
         let owner_id = owner_id.to_string();
