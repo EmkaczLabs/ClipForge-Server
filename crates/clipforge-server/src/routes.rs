@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, Query, State},
-    http::{HeaderMap, StatusCode, header, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     response::{Html, IntoResponse, Response},
     routing::{delete, get, patch, post, put},
 };
@@ -39,7 +39,14 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use crate::config::ServerConfig;
+use crate::embed::{
+    OEmbedResponse, ShareEmbedMeta, escape_html, extract_share_id_from_url, inject_share_meta_tags,
+    url_encode,
+};
 use crate::error::ServerError;
+use crate::media::{
+    FALLBACK_THUMBNAIL_PNG, generate_and_store_thumbnail, generate_thumbnail_from_storage,
+};
 use crate::range::{head_object_response, stream_object_response};
 
 const EMBEDDED_PLAYER_HTML: &str = include_str!("../../../web/index.html");
@@ -92,6 +99,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/quota", get(get_quota))
         .route("/api/v1/openapi.yaml", get(openapi_yaml))
         .route("/api/v1/openapi.json", get(openapi_json))
+        .route("/api/v1/oembed", get(get_oembed))
         // Browser share player pages
         .route("/c/{share_id}", get(serve_player_page))
         .route("/s/{share_id}", get(serve_player_page))
@@ -134,6 +142,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/shares/{token}/visibility",
             patch(update_share_visibility),
+        )
+        .route(
+            "/api/v1/shares/{token}/thumbnail",
+            get(get_share_thumbnail).head(head_share_thumbnail),
         )
         .route(
             "/api/v1/shares/{token}/video",
@@ -327,14 +339,79 @@ async fn openapi_json() -> Json<serde_json::Value> {
     }))
 }
 
-async fn serve_player_page(State(state): State<AppState>) -> Html<String> {
-    if let Some(web_dir) = &state.config.web_dir {
+async fn load_player_html_template(config: &ServerConfig) -> String {
+    if let Some(web_dir) = &config.web_dir {
         let path = web_dir.join("index.html");
         if let Ok(contents) = tokio::fs::read_to_string(&path).await {
-            return Html(contents);
+            return contents;
         }
     }
-    Html(EMBEDDED_PLAYER_HTML.to_string())
+    EMBEDDED_PLAYER_HTML.to_string()
+}
+
+async fn serve_player_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(share_id): Path<String>,
+) -> Html<String> {
+    let html = load_player_html_template(&state.config).await;
+
+    let Ok(ShareLookupOutcome::Active(lookup)) =
+        state.db.lookup_public_share(&share_id, Utc::now()).await
+    else {
+        return Html(html);
+    };
+
+    if lookup.share.visibility != ShareVisibility::Public
+        || lookup.clip.visibility != ShareVisibility::Public
+    {
+        return Html(html);
+    }
+
+    let base = resolve_base_url(&state.config, &headers);
+    let prefix = if base.is_empty() { "" } else { base.as_str() };
+    let share_url = build_share_url(&state.config, &headers, &lookup.share.share_id);
+    let video_url = format!("{prefix}/api/v1/shares/{}/video", lookup.share.share_id);
+    let thumbnail_url = format!("{prefix}/api/v1/shares/{}/thumbnail", lookup.share.share_id);
+    let oembed_url = format!("{prefix}/api/v1/oembed?url={}", url_encode(&share_url));
+
+    let description = lookup
+        .clip
+        .notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| match &lookup.clip.game {
+            Some(g) if !g.name.trim().is_empty() => {
+                format!("Recorded in {} · Shared on ClipForge", g.name.trim())
+            }
+            _ => "Watch this clip on ClipForge".to_string(),
+        });
+
+    let width = if lookup.clip.width > 0 {
+        lookup.clip.width
+    } else {
+        1280
+    };
+    let height = if lookup.clip.height > 0 {
+        lookup.clip.height
+    } else {
+        720
+    };
+
+    let meta = ShareEmbedMeta {
+        title: lookup.clip.title,
+        description,
+        share_url,
+        thumbnail_url,
+        video_url,
+        oembed_url,
+        width,
+        height,
+    };
+
+    Html(inject_share_meta_tags(&html, &meta))
 }
 
 // ---------------------------------------------------------------------------
@@ -761,6 +838,8 @@ async fn complete_upload_session(
         }
     };
 
+    generate_thumbnail_from_storage(&state, &user.user_id, clip.id, &session.storage_key).await;
+
     Ok(Json(UploadStatusDto {
         session_id: completed_session.session_id,
         clip_id: completed_session.clip_id,
@@ -975,6 +1054,8 @@ async fn upload_clip_multipart(
             return Err(err.into());
         }
     };
+
+    generate_and_store_thumbnail(&state, &user.user_id, created.id, named_temp.path()).await;
 
     Ok((
         StatusCode::CREATED,
@@ -1292,12 +1373,13 @@ async fn get_public_share(
     let lookup = resolve_share_lookup(&state, &token, &headers, query_tok).await?;
 
     let base = resolve_base_url(&state.config, &headers);
+    let prefix = if base.is_empty() { "" } else { base.as_str() };
     let url = build_share_url(&state.config, &headers, &lookup.share.share_id);
-    let video_url = if base.is_empty() {
-        format!("/api/v1/shares/{}/video", lookup.share.share_id)
-    } else {
-        format!("{base}/api/v1/shares/{}/video", lookup.share.share_id)
-    };
+    let video_url = format!("{prefix}/api/v1/shares/{}/video", lookup.share.share_id);
+    let thumbnail_url = Some(format!(
+        "{prefix}/api/v1/shares/{}/thumbnail",
+        lookup.share.share_id
+    ));
 
     Ok(Json(PublicShareDto {
         share_id: lookup.share.share_id,
@@ -1316,10 +1398,193 @@ async fn get_public_share(
         visibility: lookup.share.visibility,
         url,
         video_url,
-        thumbnail_url: None,
+        thumbnail_url,
         created_at: lookup.clip.created_at,
         uploaded_at: lookup.clip.uploaded_at,
         expires_at: lookup.share.expires_at,
+    }))
+}
+
+fn share_cache_control(lookup: &clipforge_db::PublicShareLookup) -> &'static str {
+    if lookup.share.visibility == ShareVisibility::Public
+        && lookup.clip.visibility == ShareVisibility::Public
+    {
+        "public, max-age=3600"
+    } else {
+        "private, no-store"
+    }
+}
+
+async fn serve_share_thumbnail_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    params: &HashMap<String, String>,
+    token: &str,
+    head_only: bool,
+) -> Result<Response, ServerError> {
+    let query_tok = params.get("token").map(String::as_str);
+    let lookup = resolve_share_lookup(state, token, headers, query_tok).await?;
+    let cache_control = share_cache_control(&lookup);
+
+    if let Some(asset) = lookup.thumbnail_asset {
+        match state.storage.head_object(&asset.storage_key).await {
+            Ok(meta) => {
+                let content_type = meta.content_type.unwrap_or(asset.content_type);
+                let content_len = meta.size_bytes.to_string();
+                if head_only {
+                    return Ok((
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, content_type),
+                            (header::CONTENT_LENGTH, content_len),
+                            (header::CACHE_CONTROL, cache_control.to_string()),
+                        ],
+                        Body::empty(),
+                    )
+                        .into_response());
+                }
+                let range_obj = state
+                    .storage
+                    .get_object_range(&asset.storage_key, 0, None)
+                    .await?;
+                return Ok((
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, content_type),
+                        (header::CONTENT_LENGTH, content_len),
+                        (header::CACHE_CONTROL, cache_control.to_string()),
+                    ],
+                    Body::from_stream(range_obj.stream),
+                )
+                    .into_response());
+            }
+            Err(clipforge_storage::StorageError::NotFound(_)) => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    let fallback_cache = if cache_control.starts_with("public") {
+        "public, max-age=300"
+    } else {
+        cache_control
+    };
+    let body = if head_only {
+        Body::empty()
+    } else {
+        Body::from(FALLBACK_THUMBNAIL_PNG)
+    };
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "image/png".to_string()),
+            (
+                header::CONTENT_LENGTH,
+                FALLBACK_THUMBNAIL_PNG.len().to_string(),
+            ),
+            (header::CACHE_CONTROL, fallback_cache.to_string()),
+        ],
+        body,
+    )
+        .into_response())
+}
+
+async fn head_share_thumbnail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    Path(token): Path<String>,
+) -> Result<Response, ServerError> {
+    serve_share_thumbnail_inner(&state, &headers, &params, &token, true).await
+}
+
+async fn get_share_thumbnail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    Path(token): Path<String>,
+) -> Result<Response, ServerError> {
+    serve_share_thumbnail_inner(&state, &headers, &params, &token, false).await
+}
+
+#[derive(Debug, Deserialize)]
+struct OEmbedQuery {
+    url: Option<String>,
+    format: Option<String>,
+    maxwidth: Option<u32>,
+    maxheight: Option<u32>,
+}
+
+async fn get_oembed(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<OEmbedQuery>,
+) -> Result<Json<OEmbedResponse>, ServerError> {
+    if let Some(fmt) = query.format.as_deref()
+        && !fmt.eq_ignore_ascii_case("json")
+    {
+        return Err(ServerError::BadRequest(
+            "only 'json' oembed format is supported".to_string(),
+        ));
+    }
+
+    let raw_url = query
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ServerError::BadRequest("missing required 'url' parameter".to_string()))?;
+
+    let share_id = extract_share_id_from_url(raw_url)
+        .ok_or_else(|| ServerError::BadRequest("invalid ClipForge share URL".to_string()))?;
+
+    let lookup = resolve_share_lookup(&state, &share_id, &headers, None).await?;
+    if lookup.share.visibility != ShareVisibility::Public
+        || lookup.clip.visibility != ShareVisibility::Public
+    {
+        return Err(ServerError::Forbidden("this share is private".to_string()));
+    }
+
+    let mut width = if lookup.clip.width > 0 {
+        lookup.clip.width
+    } else {
+        1280
+    };
+    let mut height = if lookup.clip.height > 0 {
+        lookup.clip.height
+    } else {
+        720
+    };
+
+    if let Some(max_w) = query.maxwidth.filter(|&w| w > 0 && w < width) {
+        height = ((u64::from(height) * u64::from(max_w)) / u64::from(width)).max(1) as u32;
+        width = max_w;
+    }
+    if let Some(max_h) = query.maxheight.filter(|&h| h > 0 && h < height) {
+        width = ((u64::from(width) * u64::from(max_h)) / u64::from(height)).max(1) as u32;
+        height = max_h;
+    }
+
+    let base = resolve_base_url(&state.config, &headers);
+    let prefix = if base.is_empty() { "" } else { base.as_str() };
+    let share_url = build_share_url(&state.config, &headers, &lookup.share.share_id);
+    let thumbnail_url = format!("{prefix}/api/v1/shares/{}/thumbnail", lookup.share.share_id);
+    let html = format!(
+        "<iframe src=\"{}\" width=\"{width}\" height=\"{height}\" frameborder=\"0\" allowfullscreen></iframe>",
+        escape_html(&share_url)
+    );
+
+    Ok(Json(OEmbedResponse {
+        kind: "video",
+        version: "1.0",
+        title: lookup.clip.title,
+        provider_name: "ClipForge",
+        provider_url: if base.is_empty() { None } else { Some(base) },
+        thumbnail_url,
+        thumbnail_width: width,
+        thumbnail_height: height,
+        width,
+        height,
+        html,
     }))
 }
 
@@ -1331,16 +1596,22 @@ async fn head_share_video(
 ) -> Result<Response, ServerError> {
     let query_tok = params.get("token").map(String::as_str);
     let lookup = resolve_share_lookup(&state, &token, &headers, query_tok).await?;
+    let cache_control = share_cache_control(&lookup);
     let asset = lookup
         .original_asset
         .ok_or_else(|| ServerError::NotFound("clip video asset not found".to_string()))?;
 
-    head_object_response(
+    let mut resp = head_object_response(
         state.storage.as_ref(),
         &asset.storage_key,
         &asset.content_type,
     )
-    .await
+    .await?;
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
+    Ok(resp)
 }
 
 async fn stream_share_video(
@@ -1351,17 +1622,23 @@ async fn stream_share_video(
 ) -> Result<Response, ServerError> {
     let query_tok = params.get("token").map(String::as_str);
     let lookup = resolve_share_lookup(&state, &token, &headers, query_tok).await?;
+    let cache_control = share_cache_control(&lookup);
     let asset = lookup
         .original_asset
         .ok_or_else(|| ServerError::NotFound("clip video asset not found".to_string()))?;
 
-    stream_object_response(
+    let mut resp = stream_object_response(
         state.storage.as_ref(),
         &asset.storage_key,
         &asset.content_type,
         &headers,
     )
-    .await
+    .await?;
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
+    Ok(resp)
 }
 
 // ---------------------------------------------------------------------------

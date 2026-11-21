@@ -27,7 +27,7 @@ RUN cargo build --release --locked --bin clipforge-server
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and persistent /data directory

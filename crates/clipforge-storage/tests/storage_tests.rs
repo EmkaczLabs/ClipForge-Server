@@ -29,7 +29,7 @@ fn key_generation_and_path_traversal_validation() {
     assert_eq!(orig, "clips/user_123/clip-abc/original.mp4");
     assert_eq!(
         build_clip_object_key("user_123", "clip-abc", ClipObjectKind::Thumbnail).unwrap(),
-        "clips/user_123/clip-abc/thumbnail.webp"
+        "clips/user_123/clip-abc/thumbnail.jpg"
     );
     assert_eq!(
         build_clip_object_key("user_123", "clip-abc", ClipObjectKind::Preview).unwrap(),

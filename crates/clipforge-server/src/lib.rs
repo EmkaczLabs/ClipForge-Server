@@ -1,7 +1,9 @@
 //! ClipForge Server HTTP router, configuration, and application state.
 
 pub mod config;
+pub mod embed;
 pub mod error;
+pub mod media;
 pub mod range;
 pub mod routes;
 

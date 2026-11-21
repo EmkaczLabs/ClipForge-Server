@@ -17,7 +17,7 @@ impl ClipObjectKind {
     pub const fn filename(self) -> &'static str {
         match self {
             Self::Original => "original.mp4",
-            Self::Thumbnail => "thumbnail.webp",
+            Self::Thumbnail => "thumbnail.jpg",
             Self::Preview => "preview.mp4",
         }
     }
@@ -26,7 +26,7 @@ impl ClipObjectKind {
     pub const fn default_content_type(self) -> &'static str {
         match self {
             Self::Original | Self::Preview => "video/mp4",
-            Self::Thumbnail => "image/webp",
+            Self::Thumbnail => "image/jpeg",
         }
     }
 }

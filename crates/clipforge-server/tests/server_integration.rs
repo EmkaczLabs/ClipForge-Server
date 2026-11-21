@@ -1068,3 +1068,510 @@ async fn delete_clip_purges_storage_invalidates_shares_handles_partial_failure_a
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn rich_link_previews_og_twitter_oembed_xss_escaping_and_privacy() {
+    let dir = TempDir::new().expect("tempdir");
+    let (router, state) = setup_test_app(&dir, 1024, 10 * 1024 * 1024).await;
+
+    let alice = register_user(&router, "embed_alice").await;
+
+    let xss_title = "Clutch <script>alert(\"xss\")</script> & 'win'";
+    let xss_notes = "Notes <img src=x onerror=\"evil()\">";
+
+    // Create upload session with non-video bytes so ffmpeg fails gracefully and PNG fallback is exercised
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        "/api/v1/uploads",
+        Some(&alice.token),
+        Some(json!({
+            "title": xss_title,
+            "filename": "clutch.mp4",
+            "content_type": "video/mp4",
+            "total_bytes": 128,
+            "width": 1920,
+            "height": 1080,
+            "duration_ms": 5000,
+            "codec": "h264",
+            "notes": xss_notes,
+            "visibility": "public"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session: CreateUploadSessionResponse = serde_json::from_slice(&bytes).expect("session");
+
+    let payload = vec![0xAAu8; 128];
+    let put_req = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/v1/uploads/{}/parts/1", session.session_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", alice.token))
+        .body(Body::from(payload))
+        .expect("put part");
+    let put_resp = router.clone().oneshot(put_req).await.expect("put");
+    assert_eq!(put_resp.status(), StatusCode::OK);
+
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        &format!("/api/v1/uploads/{}/complete", session.session_id),
+        Some(&alice.token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let upload_done: UploadStatusDto = serde_json::from_slice(&bytes).expect("complete");
+    let clip = upload_done.clip.expect("clip");
+
+    // Create public share
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        &format!("/api/v1/clips/{}/shares", clip.id),
+        Some(&alice.token),
+        Some(json!({ "visibility": "public" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let share: CreateShareResponse = serde_json::from_slice(&bytes).expect("share");
+    let sid = &share.share_id;
+
+    // 1. HTML meta tags on /c/{share_id} and /s/{share_id} with strict XSS escaping
+    for route_prefix in ["/c", "/s"] {
+        let (status, html_bytes) = json_req(
+            &router,
+            Method::GET,
+            &format!("{route_prefix}/{sid}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let html = String::from_utf8(html_bytes).expect("utf8");
+
+        assert!(html.contains("<meta property=\"og:type\" content=\"video.other\" />"));
+        assert!(html.contains(&format!(
+            "<meta property=\"og:url\" content=\"https://clips.test.local/c/{sid}\" />"
+        )));
+        assert!(html.contains(&format!(
+            "<meta property=\"og:image\" content=\"https://clips.test.local/api/v1/shares/{sid}/thumbnail\" />"
+        )));
+        assert!(html.contains(&format!(
+            "<meta property=\"og:video\" content=\"https://clips.test.local/api/v1/shares/{sid}/video\" />"
+        )));
+        assert!(html.contains(&format!(
+            "<meta property=\"og:video:secure_url\" content=\"https://clips.test.local/api/v1/shares/{sid}/video\" />"
+        )));
+        assert!(html.contains("<meta property=\"og:video:type\" content=\"video/mp4\" />"));
+        assert!(html.contains("<meta property=\"og:video:width\" content=\"1920\" />"));
+        assert!(html.contains("<meta property=\"og:video:height\" content=\"1080\" />"));
+
+        assert!(html.contains("<meta name=\"twitter:card\" content=\"player\" />"));
+        assert!(html.contains(&format!(
+            "<meta name=\"twitter:player\" content=\"https://clips.test.local/c/{sid}\" />"
+        )));
+        assert!(html.contains("<meta name=\"twitter:player:width\" content=\"1920\" />"));
+        assert!(html.contains("<meta name=\"twitter:player:height\" content=\"1080\" />"));
+        assert!(html.contains(&format!(
+            "<meta name=\"twitter:player:stream\" content=\"https://clips.test.local/api/v1/shares/{sid}/video\" />"
+        )));
+        assert!(html.contains(
+            "<meta name=\"twitter:player:stream:content_type\" content=\"video/mp4\" />"
+        ));
+        assert!(html.contains("<link rel=\"alternate\" type=\"application/json+oembed\""));
+
+        // XSS payloads must be escaped, never raw
+        assert!(!html.contains("<script>alert("));
+        assert!(!html.contains("<img src=x"));
+        assert!(
+            html.contains(
+                "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; &#x27;win&#x27;"
+            )
+        );
+        assert!(html.contains("&lt;img src=x onerror=&quot;evil()&quot;&gt;"));
+    }
+
+    // 2. oEmbed endpoint
+    let oembed_uri = format!("/api/v1/oembed?url=https://clips.test.local/c/{sid}");
+    let (status, oembed_bytes) = json_req(&router, Method::GET, &oembed_uri, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let oembed: Value = serde_json::from_slice(&oembed_bytes).expect("oembed json");
+    assert_eq!(oembed["type"], "video");
+    assert_eq!(oembed["version"], "1.0");
+    assert_eq!(oembed["title"], xss_title);
+    assert_eq!(oembed["provider_name"], "ClipForge");
+    assert_eq!(oembed["width"], 1920);
+    assert_eq!(oembed["height"], 1080);
+    assert_eq!(
+        oembed["thumbnail_url"],
+        format!("https://clips.test.local/api/v1/shares/{sid}/thumbnail")
+    );
+    assert!(
+        oembed["html"]
+            .as_str()
+            .expect("html")
+            .contains(&format!("src=\"https://clips.test.local/c/{sid}\""))
+    );
+
+    // 3. Embedded PNG fallback thumbnail (GET & HEAD)
+    let thumb_uri = format!("/api/v1/shares/{sid}/thumbnail");
+    let head_thumb = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri(&thumb_uri)
+                .body(Body::empty())
+                .expect("head thumb"),
+        )
+        .await
+        .expect("head thumb resp");
+    assert_eq!(head_thumb.status(), StatusCode::OK);
+    assert_eq!(
+        head_thumb.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+    assert!(head_thumb.headers().get(header::CACHE_CONTROL).is_some());
+
+    let get_thumb = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&thumb_uri)
+                .body(Body::empty())
+                .expect("get thumb"),
+        )
+        .await
+        .expect("get thumb resp");
+    assert_eq!(get_thumb.status(), StatusCode::OK);
+    assert_eq!(
+        get_thumb.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+    assert!(get_thumb.headers().get(header::CACHE_CONTROL).is_some());
+    let png_bytes = body_bytes(get_thumb).await;
+    assert!(png_bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+    // 4. Public video HEAD & Range 206 + Cache-Control
+    let video_uri = format!("/api/v1/shares/{sid}/video");
+    let head_video = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri(&video_uri)
+                .body(Body::empty())
+                .expect("head video"),
+        )
+        .await
+        .expect("head video resp");
+    assert_eq!(head_video.status(), StatusCode::OK);
+    assert_eq!(
+        head_video.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/mp4"
+    );
+    assert_eq!(
+        head_video.headers().get(header::ACCEPT_RANGES).unwrap(),
+        "bytes"
+    );
+    assert_eq!(
+        head_video.headers().get(header::CONTENT_LENGTH).unwrap(),
+        "128"
+    );
+    assert!(head_video.headers().get(header::CACHE_CONTROL).is_some());
+
+    let range_video = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&video_uri)
+                .header(header::RANGE, "bytes=0-63")
+                .body(Body::empty())
+                .expect("range video"),
+        )
+        .await
+        .expect("range video resp");
+    assert_eq!(range_video.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        range_video.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/mp4"
+    );
+    assert_eq!(
+        range_video.headers().get(header::ACCEPT_RANGES).unwrap(),
+        "bytes"
+    );
+    assert_eq!(
+        range_video.headers().get(header::CONTENT_LENGTH).unwrap(),
+        "64"
+    );
+    assert!(range_video.headers().get(header::CACHE_CONTROL).is_some());
+
+    // 5. Private share -> 403 on thumbnail/oembed, no metadata leak in HTML
+    let (status, _) = json_req(
+        &router,
+        Method::PATCH,
+        &format!("/api/v1/shares/{sid}/visibility"),
+        Some(&alice.token),
+        Some(json!({ "visibility": "private" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = json_req(&router, Method::GET, &thumb_uri, None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = json_req(&router, Method::GET, &oembed_uri, None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, html_bytes) =
+        json_req(&router, Method::GET, &format!("/c/{sid}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let priv_html = String::from_utf8(html_bytes).expect("utf8");
+    assert!(!priv_html.contains("Clutch"));
+    assert!(!priv_html.contains(&alice.user_id));
+    assert!(!priv_html.contains(&clip.id.to_string()));
+    assert!(!priv_html.contains("og:video"));
+
+    // 6. Revoked share -> 410 on thumbnail/oembed, no metadata leak in HTML
+    let (status, _) = json_req(
+        &router,
+        Method::PATCH,
+        &format!("/api/v1/shares/{sid}/visibility"),
+        Some(&alice.token),
+        Some(json!({ "visibility": "public" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = json_req(
+        &router,
+        Method::DELETE,
+        &format!("/api/v1/shares/{sid}"),
+        Some(&alice.token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = json_req(&router, Method::GET, &thumb_uri, None, None).await;
+    assert_eq!(status, StatusCode::GONE);
+    let (status, _) = json_req(&router, Method::GET, &oembed_uri, None, None).await;
+    assert_eq!(status, StatusCode::GONE);
+
+    let (status, html_bytes) =
+        json_req(&router, Method::GET, &format!("/c/{sid}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let rev_html = String::from_utf8(html_bytes).expect("utf8");
+    assert!(!rev_html.contains("Clutch"));
+    assert!(!rev_html.contains(&alice.user_id));
+
+    // 7. Expired share -> 410
+    let expired_share = state
+        .db
+        .create_share(
+            &alice.user_id,
+            clip.id,
+            "expired-test-token".to_string(),
+            ShareVisibility::Public,
+            Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+        )
+        .await
+        .expect("expired share");
+    let (status, _) = json_req(
+        &router,
+        Method::GET,
+        &format!("/api/v1/shares/{}/thumbnail", expired_share.share_id),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE);
+
+    // 8. Invalid share -> 404
+    let (status, _) = json_req(
+        &router,
+        Method::GET,
+        "/api/v1/shares/nonexistent-token/thumbnail",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = json_req(
+        &router,
+        Method::GET,
+        "/api/v1/oembed?url=https://clips.test.local/c/nonexistent-token",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn ffmpeg_thumbnail_generation_and_short_clip_fallback() {
+    let dir = TempDir::new().expect("tempdir");
+    let mp4_path = dir.path().join("synthetic.mp4");
+
+    // Generate a 0.5s synthetic MP4 using ffmpeg (exercises the 00:00:00 fallback for <1s clips)
+    let ffmpeg_status = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x180:d=0.5",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+        ])
+        .arg(&mp4_path)
+        .status();
+
+    let Ok(status) = ffmpeg_status else {
+        // If ffmpeg is absent in a minimal CI container, skip this test cleanly.
+        return;
+    };
+    if !status.success() {
+        return;
+    }
+
+    let mp4_bytes = std::fs::read(&mp4_path).expect("read synthetic mp4");
+    assert!(!mp4_bytes.is_empty());
+
+    let (router, state) = setup_test_app(&dir, 4 * 1024 * 1024, 20 * 1024 * 1024).await;
+    let alice = register_user(&router, "ffmpeg_alice").await;
+
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        "/api/v1/uploads",
+        Some(&alice.token),
+        Some(json!({
+            "title": "Synthetic FFmpeg Clip",
+            "filename": "synthetic.mp4",
+            "content_type": "video/mp4",
+            "total_bytes": mp4_bytes.len(),
+            "width": 320,
+            "height": 180,
+            "duration_ms": 500,
+            "codec": "h264",
+            "visibility": "public"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session: CreateUploadSessionResponse = serde_json::from_slice(&bytes).expect("session");
+
+    let put_req = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/v1/uploads/{}/parts/1", session.session_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", alice.token))
+        .body(Body::from(mp4_bytes))
+        .expect("put part");
+    let put_resp = router.clone().oneshot(put_req).await.expect("put");
+    assert_eq!(put_resp.status(), StatusCode::OK);
+
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        &format!("/api/v1/uploads/{}/complete", session.session_id),
+        Some(&alice.token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let done: UploadStatusDto = serde_json::from_slice(&bytes).expect("complete");
+    let clip = done.clip.expect("clip");
+
+    let thumb_asset = state
+        .db
+        .get_clip_asset_for_owner(
+            &alice.user_id,
+            clip.id,
+            clipforge_db::ClipAssetKind::Thumbnail,
+        )
+        .await
+        .expect("db")
+        .expect("generated thumbnail asset");
+    assert_eq!(thumb_asset.content_type, "image/jpeg");
+    assert!(thumb_asset.storage_key.ends_with("/thumbnail.jpg"));
+    assert!(thumb_asset.size_bytes > 0);
+
+    let (status, bytes) = json_req(
+        &router,
+        Method::POST,
+        &format!("/api/v1/clips/{}/shares", clip.id),
+        Some(&alice.token),
+        Some(json!({ "visibility": "public" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let share: CreateShareResponse = serde_json::from_slice(&bytes).expect("share");
+
+    let (status, bytes) = json_req(
+        &router,
+        Method::GET,
+        &format!("/api/v1/shares/{}", share.share_id),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let public_share: PublicShareDto = serde_json::from_slice(&bytes).expect("public share");
+    assert_eq!(
+        public_share.thumbnail_url.as_deref(),
+        Some(
+            format!(
+                "https://clips.test.local/api/v1/shares/{}/thumbnail",
+                share.share_id
+            )
+            .as_str()
+        )
+    );
+
+    let thumb_uri = format!("/api/v1/shares/{}/thumbnail", share.share_id);
+    let head_resp = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri(&thumb_uri)
+                .body(Body::empty())
+                .expect("head"),
+        )
+        .await
+        .expect("head resp");
+    assert_eq!(head_resp.status(), StatusCode::OK);
+    assert_eq!(
+        head_resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
+    assert_eq!(
+        head_resp.headers().get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=3600"
+    );
+
+    let get_resp = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&thumb_uri)
+                .body(Body::empty())
+                .expect("get"),
+        )
+        .await
+        .expect("get resp");
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    assert_eq!(
+        get_resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
+    let jpeg_bytes = body_bytes(get_resp).await;
+    assert!(jpeg_bytes.starts_with(&[0xFF, 0xD8, 0xFF]));
+}
