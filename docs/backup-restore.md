@@ -41,7 +41,7 @@ docker compose start clipforge-server
 ## 2. Backing Up Clip Media
 
 - **External RustFS / S3 mode (`CLIPFORGE_STORAGE_BACKEND=s3`)**:
-  Media objects live in your S3/RustFS bucket (`S3_BUCKET`, e.g. on `https://s3.emkacz.dev`) under `clips/{user_id}/{clip_id}/...`. Use your object store's bucket replication, snapshots, or `rclone` / `aws s3 sync` to back up the bucket.
+  Media objects live in your S3/RustFS bucket (`S3_BUCKET`, e.g. on `https://s3.example.com`) under `clips/{user_id}/{clip_id}/...`. Use your object store's bucket replication, snapshots, or `rclone` / `aws s3 sync` to back up the bucket.
 - **Local filesystem mode (`CLIPFORGE_STORAGE_BACKEND=local`)**:
   Media objects live in `/data/clips` inside the `clipforge_data` volume. Back up the `/data/clips` directory alongside the SQLite backup:
 

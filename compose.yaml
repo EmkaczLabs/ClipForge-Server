@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/clipforge/clipforge-server:latest
+    image: ghcr.io/emkaczlabs/clipforge-server:latest
     container_name: clipforge-server
     restart: unless-stopped
     stop_grace_period: 30s
@@ -14,11 +14,11 @@ services:
     environment:
       CLIPFORGE_BIND_ADDR: "0.0.0.0:3000"
       CLIPFORGE_DATABASE_PATH: "/data/clipforge-server.db"
-      # Storage mode: "s3" (default, external RustFS/S3) or "local" (zero S3 creds)
-      CLIPFORGE_STORAGE_BACKEND: "${CLIPFORGE_STORAGE_BACKEND:-s3}"
+      # Storage mode: "local" (default, zero S3 creds) or "s3" (external RustFS/S3)
+      CLIPFORGE_STORAGE_BACKEND: "${CLIPFORGE_STORAGE_BACKEND:-local}"
       CLIPFORGE_STORAGE_PATH: "${CLIPFORGE_STORAGE_PATH:-/data/clips}"
       # External RustFS / S3 settings (ignored when CLIPFORGE_STORAGE_BACKEND=local)
-      S3_ENDPOINT: "${S3_ENDPOINT:-https://s3.emkacz.dev}"
+      S3_ENDPOINT: "${S3_ENDPOINT:-}"
       S3_BUCKET: "${S3_BUCKET:-clipforge}"
       S3_REGION: "${S3_REGION:-us-east-1}"
       S3_FORCE_PATH_STYLE: "${S3_FORCE_PATH_STYLE:-true}"

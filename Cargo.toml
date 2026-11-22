@@ -12,7 +12,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/ClipForge/ClipForge-Server"
+repository = "https://github.com/EmkaczLabs/ClipForge-Server"
 
 [workspace.dependencies]
 anyhow = "1.0"

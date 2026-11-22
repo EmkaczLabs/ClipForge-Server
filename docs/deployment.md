@@ -16,7 +16,7 @@ cp .env.example .env
 
 ```dotenv
 CLIPFORGE_STORAGE_BACKEND=s3
-S3_ENDPOINT=https://s3.emkacz.dev
+S3_ENDPOINT=https://s3.example.com
 S3_BUCKET=clipforge
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
