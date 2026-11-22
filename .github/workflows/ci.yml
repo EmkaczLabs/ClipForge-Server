@@ -13,11 +13,6 @@ jobs:
   rust:
     name: Rust (fmt, clippy, test, release)
     runs-on: ubuntu-latest
-    env:
-      # Isolated local storage for tests; never requires production RustFS credentials.
-      CLIPFORGE_STORAGE_BACKEND: local
-      CLIPFORGE_STORAGE_PATH: ${{ runner.temp }}/clipforge-test-clips
-      CLIPFORGE_DATABASE_PATH: ${{ runner.temp }}/clipforge-test.db
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,6 +32,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run workspace tests
+        env:
+          # Isolated local storage for tests; never requires production RustFS credentials.
+          CLIPFORGE_STORAGE_BACKEND: local
+          CLIPFORGE_STORAGE_PATH: ${{ runner.temp }}/clipforge-test-clips
+          CLIPFORGE_DATABASE_PATH: ${{ runner.temp }}/clipforge-test.db
         run: cargo test --workspace
 
       - name: Build release binary
