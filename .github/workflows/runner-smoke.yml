@@ -1,0 +1,24 @@
+name: Org Runner Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-smoke:
+    name: Shared Org Linux Runner Smoke Test
+    runs-on: [self-hosted, Linux, X64, clipforge-linux-build]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify host & Rust toolchain
+        run: |
+          set -euo pipefail
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          uname -a
+          rustc --version
+          cargo --version
